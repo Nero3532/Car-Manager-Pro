@@ -1,4 +1,4 @@
-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# -*- mode: python ; coding: utf-8 -*-
+ -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
 datas = [('app_icon.ico', '.')]

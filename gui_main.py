@@ -16,7 +16,7 @@ import zipfile
 import email_utils
 import requests
 
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "1.0.1"
 
 import sys
 import ctypes
@@ -517,14 +517,22 @@ class CarManagerApp:
         dialog.geometry("500x500")
         
         ttk.Label(dialog, text="Empfänger:").pack(anchor="w", padx=10, pady=(10,0))
-        entry_to = ttk.Entry(dialog)
+        
+        frame_to = ttk.Frame(dialog)
+        frame_to.pack(fill="x", padx=10, pady=5)
+        entry_to = ttk.Entry(frame_to)
         entry_to.insert(0, to_email)
-        entry_to.pack(fill="x", padx=10, pady=5)
+        entry_to.pack(side="left", fill="x", expand=True)
+        self.create_copy_button(frame_to, entry_to).pack(side="left", padx=5)
         
         ttk.Label(dialog, text="Betreff:").pack(anchor="w", padx=10)
-        entry_subject = ttk.Entry(dialog)
+        
+        frame_sub = ttk.Frame(dialog)
+        frame_sub.pack(fill="x", padx=10, pady=5)
+        entry_subject = ttk.Entry(frame_sub)
         entry_subject.insert(0, subject)
-        entry_subject.pack(fill="x", padx=10, pady=5)
+        entry_subject.pack(side="left", fill="x", expand=True)
+        self.create_copy_button(frame_sub, entry_subject).pack(side="left", padx=5)
         
         ttk.Label(dialog, text="Nachricht:").pack(anchor="w", padx=10)
         text_body = tk.Text(dialog, height=15)
@@ -735,6 +743,12 @@ class CarManagerApp:
             self.load_inventory()
             self.update_dashboard()
 
+    def create_copy_button(self, dialog, entry):
+        def copy_content():
+            dialog.clipboard_clear()
+            dialog.clipboard_append(entry.get())
+        return ttk.Button(dialog, text="📋", width=3, command=copy_content)
+
     def open_vehicle_dialog(self, vehicle):
         dialog = tk.Toplevel(self.root)
         dialog.title("Fahrzeug Details" if vehicle else "Neues Fahrzeug")
@@ -762,6 +776,8 @@ class CarManagerApp:
             ttk.Label(tab_details, text=label).grid(row=i, column=0, padx=10, pady=5, sticky="e")
             entry = ttk.Entry(tab_details)
             entry.grid(row=i, column=1, padx=10, pady=5, sticky="ew")
+            copy_btn = self.create_copy_button(tab_details, entry)
+            copy_btn.grid(row=i, column=2, padx=5)
             entries[key] = entry
             
         ttk.Label(tab_details, text="Status").grid(row=len(fields), column=0, padx=10, pady=5, sticky="e")
@@ -962,6 +978,8 @@ class CarManagerApp:
             ttk.Label(dialog, text=label).grid(row=i, column=0, padx=10, pady=5, sticky="e")
             entry = ttk.Entry(dialog)
             entry.grid(row=i, column=1, padx=10, pady=5, sticky="ew")
+            copy_btn = self.create_copy_button(dialog, entry)
+            copy_btn.grid(row=i, column=2, padx=5)
             entries[key] = entry
         
         # Status Field
@@ -1330,6 +1348,8 @@ class CarManagerApp:
             ttk.Label(dialog, text=label).grid(row=i, column=0, padx=10, pady=5, sticky="e")
             entry = ttk.Entry(dialog)
             entry.grid(row=i, column=1, padx=10, pady=5, sticky="ew")
+            copy_btn = self.create_copy_button(dialog, entry)
+            copy_btn.grid(row=i, column=2, padx=5)
             entries[key] = entry
             
         if part:
@@ -1904,21 +1924,25 @@ class CarManagerApp:
         ttk.Label(lf_company, text="Firmenname:").grid(row=0, column=0, **grid_opts)
         self.ent_company_name = ttk.Entry(lf_company)
         self.ent_company_name.grid(row=0, column=1, **grid_opts)
+        self.create_copy_button(lf_company, self.ent_company_name).grid(row=0, column=2, padx=5)
         self.ent_company_name.insert(0, database.get_setting("company_name", "CAR Manager Händler"))
 
         ttk.Label(lf_company, text="Adresse:").grid(row=1, column=0, **grid_opts)
         self.ent_company_address = ttk.Entry(lf_company)
         self.ent_company_address.grid(row=1, column=1, **grid_opts)
+        self.create_copy_button(lf_company, self.ent_company_address).grid(row=1, column=2, padx=5)
         self.ent_company_address.insert(0, database.get_setting("company_address", "Musterstraße 1, 12345 Musterstadt"))
 
         ttk.Label(lf_company, text="Fußzeile (Vertrag):").grid(row=2, column=0, **grid_opts)
         self.ent_company_footer = ttk.Entry(lf_company)
         self.ent_company_footer.grid(row=2, column=1, **grid_opts)
+        self.create_copy_button(lf_company, self.ent_company_footer).grid(row=2, column=2, padx=5)
         self.ent_company_footer.insert(0, database.get_setting("company_footer", "Geschäftsführer: Max Mustermann | HRB 12345"))
 
         ttk.Label(lf_company, text="Logo Pfad:").grid(row=3, column=0, **grid_opts)
         self.ent_company_logo = ttk.Entry(lf_company)
         self.ent_company_logo.grid(row=3, column=1, **grid_opts)
+        self.create_copy_button(lf_company, self.ent_company_logo).grid(row=3, column=3, padx=5)
         self.ent_company_logo.insert(0, database.get_setting("company_logo", ""))
         
         def choose_logo():
@@ -1938,21 +1962,25 @@ class CarManagerApp:
         ttk.Label(lf_email, text="SMTP Server:").grid(row=0, column=0, **grid_opts)
         self.ent_smtp_server = ttk.Entry(lf_email)
         self.ent_smtp_server.grid(row=0, column=1, **grid_opts)
+        self.create_copy_button(lf_email, self.ent_smtp_server).grid(row=0, column=2, padx=5)
         self.ent_smtp_server.insert(0, database.get_setting("smtp_server", ""))
 
         ttk.Label(lf_email, text="Port:").grid(row=1, column=0, **grid_opts)
         self.ent_smtp_port = ttk.Entry(lf_email)
         self.ent_smtp_port.grid(row=1, column=1, **grid_opts)
+        self.create_copy_button(lf_email, self.ent_smtp_port).grid(row=1, column=2, padx=5)
         self.ent_smtp_port.insert(0, database.get_setting("smtp_port", "587"))
 
         ttk.Label(lf_email, text="Benutzer (Email):").grid(row=2, column=0, **grid_opts)
         self.ent_smtp_user = ttk.Entry(lf_email)
         self.ent_smtp_user.grid(row=2, column=1, **grid_opts)
+        self.create_copy_button(lf_email, self.ent_smtp_user).grid(row=2, column=2, padx=5)
         self.ent_smtp_user.insert(0, database.get_setting("smtp_user", ""))
 
         ttk.Label(lf_email, text="Passwort:").grid(row=3, column=0, **grid_opts)
         self.ent_smtp_pass = ttk.Entry(lf_email, show="*")
         self.ent_smtp_pass.grid(row=3, column=1, **grid_opts)
+        self.create_copy_button(lf_email, self.ent_smtp_pass).grid(row=3, column=2, padx=5)
         self.ent_smtp_pass.insert(0, database.get_setting("smtp_password", ""))
 
         lf_email.columnconfigure(1, weight=1)
@@ -1964,11 +1992,13 @@ class CarManagerApp:
         ttk.Label(lf_update, text="GitHub User/Org:").grid(row=0, column=0, **grid_opts)
         self.ent_github_owner = ttk.Entry(lf_update)
         self.ent_github_owner.grid(row=0, column=1, **grid_opts)
+        self.create_copy_button(lf_update, self.ent_github_owner).grid(row=0, column=2, padx=5)
         self.ent_github_owner.insert(0, database.get_setting("github_owner", "Nero3532"))
 
         ttk.Label(lf_update, text="Repository:").grid(row=1, column=0, **grid_opts)
         self.ent_github_repo = ttk.Entry(lf_update)
         self.ent_github_repo.grid(row=1, column=1, **grid_opts)
+        self.create_copy_button(lf_update, self.ent_github_repo).grid(row=1, column=2, padx=5)
         self.ent_github_repo.insert(0, database.get_setting("github_repo", "Car-Manager-Pro"))
 
         ttk.Button(lf_update, text="Nach Updates suchen", command=self.check_for_updates).grid(row=2, column=1, pady=10, sticky="w")

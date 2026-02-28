@@ -17,7 +17,7 @@ class InstallerApp:
         
         # Default Install Path
         self.install_dir = os.path.join(os.environ['LOCALAPPDATA'], 'Programs', 'CAR Manager Pro')
-        self.app_name = "CAR Manager Pro.exe"
+        self.app_name = "CAR_Manager_Pro.exe"
         
         # UI Setup
         self.setup_ui()
@@ -159,12 +159,12 @@ class InstallerApp:
 
     def create_shortcut(self, path, target, work_dir, icon):
         shell = win32com.client.Dispatch("WScript.Shell")
-        shortcut = shell.CreateShortCut(path)
-        shortcut.Targetpath = target
+        shortcut = shell.CreateShortcut(path)
+        shortcut.TargetPath = target
         shortcut.WorkingDirectory = work_dir
         if os.path.exists(icon):
             shortcut.IconLocation = icon
-        shortcut.save()
+        shortcut.Save()
 
 if __name__ == "__main__":
     root = ttk.Window(themename="darkly")

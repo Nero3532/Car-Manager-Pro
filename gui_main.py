@@ -1993,15 +1993,41 @@ class CarManagerApp:
         self.ent_github_owner = ttk.Entry(lf_update)
         self.ent_github_owner.grid(row=0, column=1, **grid_opts)
         self.create_copy_button(lf_update, self.ent_github_owner).grid(row=0, column=2, padx=5)
-        self.ent_github_owner.insert(0, database.get_setting("github_owner", "Nero3532"))
+        
+        # Default fallback
+        gh_owner = database.get_setting("github_owner", "Nero3532")
+        if not gh_owner: gh_owner = "Nero3532"
+        self.ent_github_owner.insert(0, gh_owner)
 
         ttk.Label(lf_update, text="Repository:").grid(row=1, column=0, **grid_opts)
         self.ent_github_repo = ttk.Entry(lf_update)
         self.ent_github_repo.grid(row=1, column=1, **grid_opts)
         self.create_copy_button(lf_update, self.ent_github_repo).grid(row=1, column=2, padx=5)
-        self.ent_github_repo.insert(0, database.get_setting("github_repo", "Car-Manager-Pro"))
+        
+        # Default fallback
+        gh_repo = database.get_setting("github_repo", "Car-Manager-Pro")
+        if not gh_repo: gh_repo = "Car-Manager-Pro"
+        self.ent_github_repo.insert(0, gh_repo)
+        
+        def test_connection():
+            owner = self.ent_github_owner.get()
+            repo = self.ent_github_repo.get()
+            if not owner or not repo:
+                 messagebox.showwarning("Fehler", "Bitte User und Repo angeben.")
+                 return
+            
+            url = f"https://api.github.com/repos/{owner}/{repo}"
+            try:
+                r = requests.get(url, timeout=5)
+                if r.status_code == 200:
+                    messagebox.showinfo("Erfolg", "Verbindung erfolgreich! Repository gefunden.")
+                else:
+                    messagebox.showerror("Fehler", f"Repository nicht gefunden (Status: {r.status_code})")
+            except Exception as e:
+                messagebox.showerror("Fehler", f"Verbindungsfehler: {e}")
 
         ttk.Button(lf_update, text="Nach Updates suchen", command=self.check_for_updates).grid(row=2, column=1, pady=10, sticky="w")
+        ttk.Button(lf_update, text="Verbindung testen", command=test_connection, style="info.Outline.TButton").grid(row=2, column=1, pady=10, sticky="e")
         
         lf_update.columnconfigure(1, weight=1)
 

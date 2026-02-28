@@ -15,6 +15,7 @@ import calendar
 import zipfile
 import email_utils
 import requests
+from pdf_generator import PDFGenerator
 
 CURRENT_VERSION = "1.0.1"
 
@@ -26,9 +27,65 @@ try:
 except Exception:
     pass
 
+class LoginDialog:
+    def __init__(self, parent):
+        self.parent = parent
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Login - CAR Manager Pro")
+        self.dialog.geometry("300x180")
+        self.dialog.resizable(False, False)
+        self.dialog.transient(parent)
+        
+        # Center
+        self.dialog.update_idletasks()
+        width = 300
+        height = 180
+        x = (self.dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.dialog.winfo_screenheight() // 2) - (height // 2)
+        self.dialog.geometry(f'{width}x{height}+{x}+{y}')
+        
+        ttk.Label(self.dialog, text="🔒 Geschützter Bereich", font=("Helvetica", 12, "bold")).pack(pady=15)
+        ttk.Label(self.dialog, text="Bitte Passwort eingeben:", font=("Helvetica", 10)).pack(pady=5)
+        
+        self.password_var = tk.StringVar()
+        self.entry = ttk.Entry(self.dialog, show="*", textvariable=self.password_var)
+        self.entry.pack(pady=5, padx=40, fill="x")
+        self.entry.focus_set()
+        
+        ttk.Button(self.dialog, text="Anmelden", command=self.check_login, style="primary.TButton").pack(pady=15)
+        
+        self.dialog.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.entry.bind("<Return>", lambda e: self.check_login())
+        
+        self.success = False
+        self.parent.wait_window(self.dialog)
+
+    def check_login(self):
+        pwd = self.password_var.get()
+        stored_pwd = database.get_setting('admin_password', 'admin')
+        
+        if pwd == stored_pwd:
+            self.success = True
+            self.dialog.destroy()
+        else:
+            messagebox.showerror("Zugriff verweigert", "Falsches Passwort!")
+            self.entry.delete(0, 'end')
+
+    def on_close(self):
+        self.dialog.destroy()
+
 class CarManagerApp:
     def __init__(self, root):
         self.root = root
+        
+        # Login Check
+        self.root.withdraw()
+        login = LoginDialog(self.root)
+        if not login.success:
+            self.root.destroy()
+            sys.exit()
+        self.root.deiconify()
+        
         self.root.title("CAR Manager Pro")
         self.root.geometry("1200x800")
         
@@ -46,6 +103,8 @@ class CarManagerApp:
                 self.root.iconbitmap(icon_path)
         except Exception as e:
             print(f"Icon load warning: {e}")
+        
+        self.pdf_gen = PDFGenerator()
         
         # Style (handled by ttkbootstrap Window)
         
@@ -620,9 +679,11 @@ class CarManagerApp:
         self.inv_menu.add_separator()
         self.inv_menu.add_command(label="📋 Service Historie", command=self._context_show_history)
         self.inv_menu.add_command(label="✉ Exposé senden", command=self._context_email_expose)
+        self.inv_menu.add_command(label="📄 Exposé als PDF", command=self._context_save_expose_pdf)
         self.inv_menu.add_separator()
         self.inv_menu.add_command(label="📄 Angebot erstellen", command=lambda: self.create_document_dialog("Angebot", self._get_selected_vehicle()))
         self.inv_menu.add_command(label="🤝 Kaufvertrag erstellen", command=lambda: self.create_document_dialog("Kaufvertrag", self._get_selected_vehicle()))
+        self.inv_menu.add_command(label="🤝 Kaufvertrag als PDF", command=self._context_save_contract_pdf)
         
         self.tree.bind("<Button-3>", lambda e: self._on_right_click(e, self.tree, self.inv_menu))
 
@@ -640,6 +701,62 @@ class CarManagerApp:
     def _context_email_expose(self):
         v = self._get_selected_vehicle()
         if v: self.email_expose(v)
+
+    def _context_save_expose_pdf(self):
+        v = self._get_selected_vehicle()
+        if not v: return
+        
+        try:
+            # Attachments holen
+            attachments = database.get_attachments(v.id)
+            filepath = self.pdf_gen.generate_expose(v, attachments)
+            
+            # Ask user where to save or just show success
+            # Let's ask user for destination to be "user friendly"
+            dest = filedialog.asksaveasfilename(
+                defaultextension=".pdf", 
+                filetypes=[("PDF Documents", "*.pdf")],
+                initialfile=os.path.basename(filepath)
+            )
+            
+            if dest:
+                shutil.copy(filepath, dest)
+                if messagebox.askyesno("Erfolg", f"Exposé gespeichert unter:\n{dest}\n\nÖffnen?"):
+                    os.startfile(dest)
+            else:
+                # If canceled, maybe just open the temp one?
+                pass
+                
+        except Exception as e:
+            messagebox.showerror("Fehler", f"PDF Erstellung fehlgeschlagen: {e}")
+
+    def _context_save_contract_pdf(self):
+        v = self._get_selected_vehicle()
+        if not v: return
+        
+        # We need customer data. If owner_id is set, fetch customer.
+        customer = None
+        if v.owner_id:
+            customer = database.get_customer(v.owner_id)
+            
+        # If no owner assigned, maybe ask user to select one? 
+        # For now, generate with blank customer if None
+        
+        try:
+            filepath = self.pdf_gen.generate_sales_contract(v, customer, v.price)
+             
+            dest = filedialog.asksaveasfilename(
+                defaultextension=".pdf", 
+                filetypes=[("PDF Documents", "*.pdf")],
+                initialfile=os.path.basename(filepath)
+            )
+            
+            if dest:
+                shutil.copy(filepath, dest)
+                if messagebox.askyesno("Erfolg", f"Kaufvertrag gespeichert unter:\n{dest}\n\nÖffnen?"):
+                    os.startfile(dest)
+        except Exception as e:
+             messagebox.showerror("Fehler", f"PDF Erstellung fehlgeschlagen: {e}")
 
     def load_inventory(self):
         self.all_vehicles = database.get_all_vehicles()
@@ -859,10 +976,26 @@ class CarManagerApp:
             except Exception as e:
                 messagebox.showerror("Fehler", f"Kann Datei nicht öffnen: {e}")
 
+        def save_photo():
+            selected = photo_tree.selection()
+            if not selected: return
+            item = photo_tree.item(selected[0])
+            path = item['tags'][0]
+            fname = os.path.basename(path)
+            
+            dest = filedialog.asksaveasfilename(initialfile=fname)
+            if dest:
+                try:
+                    shutil.copy(path, dest)
+                    messagebox.showinfo("Erfolg", "Foto gespeichert.")
+                except Exception as e:
+                    messagebox.showerror("Fehler", f"Fehler beim Speichern: {e}")
+
         btn_frame = ttk.Frame(photo_frame)
         btn_frame.pack(fill="x")
         ttk.Button(btn_frame, text="Foto hinzufügen", command=add_photo).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Anzeigen", command=open_photo).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Speichern unter...", command=save_photo).pack(side="left", padx=5)
         
         if vehicle:
             load_photos()
@@ -1406,6 +1539,7 @@ class CarManagerApp:
         ttk.Button(top_frame, text="➕ Hochladen", command=self.upload_document).pack(side="left", padx=5)
         ttk.Button(top_frame, text="Bearbeiten", command=self.edit_selected_document).pack(side="left", padx=5)
         ttk.Button(top_frame, text="Öffnen", command=self.open_selected_document).pack(side="left", padx=5)
+        ttk.Button(top_frame, text="💾 Speichern unter...", command=self.save_selected_document).pack(side="left", padx=5)
         ttk.Button(top_frame, text="Löschen", command=self.delete_selected_document).pack(side="left", padx=5)
         
         cols = ("ID", "Typ", "Titel", "Datum", "Fahrzeug", "Kunde")
@@ -1425,6 +1559,7 @@ class CarManagerApp:
         self.doc_menu = tk.Menu(self.root, tearoff=0)
         self.doc_menu.add_command(label="✏ Bearbeiten", command=self.edit_selected_document)
         self.doc_menu.add_command(label="📂 Öffnen", command=self.open_selected_document)
+        self.doc_menu.add_command(label="💾 Speichern unter...", command=self.save_selected_document)
         self.doc_menu.add_command(label="🗑 Löschen", command=self.delete_selected_document)
         
         self.doc_tree.bind("<Button-3>", lambda e: self._on_right_click(e, self.doc_tree, self.doc_menu))
@@ -1450,6 +1585,26 @@ class CarManagerApp:
                 messagebox.showerror("Fehler", f"Kann Datei nicht öffnen: {e}")
         else:
             messagebox.showerror("Fehler", "Datei nicht gefunden.")
+
+    def save_selected_document(self):
+        selected = self.doc_tree.selection()
+        if not selected: return
+        item = self.doc_tree.item(selected[0])
+        path = item['tags'][0]
+        
+        if not os.path.exists(path):
+             messagebox.showerror("Fehler", "Datei nicht gefunden.")
+             return
+             
+        fname = os.path.basename(path)
+        dest = filedialog.asksaveasfilename(initialfile=fname)
+        
+        if dest:
+            try:
+                shutil.copy(path, dest)
+                messagebox.showinfo("Erfolg", "Dokument gespeichert.")
+            except Exception as e:
+                messagebox.showerror("Fehler", f"Fehler beim Speichern: {e}")
 
     def delete_selected_document(self):
         selected = self.doc_tree.selection()
@@ -1955,6 +2110,18 @@ class CarManagerApp:
 
         lf_company.columnconfigure(1, weight=1)
 
+        # --- SECURITY ---
+        lf_security = ttk.Labelframe(container, text="Sicherheit", padding=15)
+        lf_security.pack(fill="x", pady=10)
+        
+        ttk.Label(lf_security, text="Admin Passwort:").grid(row=0, column=0, **grid_opts)
+        self.ent_admin_pwd = ttk.Entry(lf_security, show="*")
+        self.ent_admin_pwd.grid(row=0, column=1, **grid_opts)
+        self.create_copy_button(lf_security, self.ent_admin_pwd).grid(row=0, column=2, padx=5)
+        self.ent_admin_pwd.insert(0, database.get_setting("admin_password", "admin"))
+        
+        lf_security.columnconfigure(1, weight=1)
+
         # --- EMAIL SETTINGS ---
         lf_email = ttk.Labelframe(container, text="Email Server (SMTP)", padding=15)
         lf_email.pack(fill="x", pady=10)
@@ -2032,6 +2199,7 @@ class CarManagerApp:
         lf_update.columnconfigure(1, weight=1)
 
         def save_settings():
+            database.set_setting("admin_password", self.ent_admin_pwd.get())
             database.set_setting("company_name", self.ent_company_name.get())
             database.set_setting("company_address", self.ent_company_address.get())
             database.set_setting("company_footer", self.ent_company_footer.get())

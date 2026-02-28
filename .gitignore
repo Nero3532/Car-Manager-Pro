@@ -7,3 +7,7 @@ dist/
 backups/
 *.log
 *.spec
+documents/
+uploads/
+CarManager.exe
+*.html

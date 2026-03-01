@@ -43,7 +43,9 @@ def init_db():
         "owner_id": "INTEGER",
         "tuv_due": "TEXT DEFAULT ''",
         "service_due": "TEXT DEFAULT ''",
-        "purchase_price": "REAL DEFAULT 0.0"
+        "purchase_price": "REAL DEFAULT 0.0",
+        "sold_date": "TEXT DEFAULT ''",
+        "sold_price": "REAL DEFAULT 0.0"
     }
     
     for col, definition in new_cols.items():
@@ -95,6 +97,20 @@ def init_db():
                 cursor.execute(f"ALTER TABLE service_history ADD COLUMN {col} {definition}")
             except Exception as e:
                 print(f"Migration error for service_history {col}: {e}")
+
+    # Parts Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS parts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            part_number TEXT,
+            quantity INTEGER DEFAULT 0,
+            min_quantity INTEGER DEFAULT 0,
+            price REAL DEFAULT 0.0,
+            supplier TEXT DEFAULT '',
+            storage_location TEXT DEFAULT ''
+        )
+    """)
 
     # Migrate customers
     cursor.execute("PRAGMA table_info(customers)")
@@ -207,18 +223,25 @@ def add_part(part):
         INSERT INTO parts (name, part_number, quantity, min_quantity, price, supplier, storage_location)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     """, (part.name, part.part_number, part.quantity, part.min_quantity, part.price, part.supplier, part.storage_location))
-    part_id = cursor.lastrowid
+    part.id = cursor.lastrowid
     conn.commit()
     conn.close()
-    return part_id
+    return part.id
 
-def get_parts():
+def get_all_parts():
     conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM parts ORDER BY name")
     rows = cursor.fetchall()
     conn.close()
-    return [Part(row[1], row[2], row[3], row[4], row[5], row[6], row[7], id=row[0]) for row in rows]
+    
+    parts = []
+    for row in rows:
+        p = Part(row['name'], row['part_number'], row['quantity'], row['min_quantity'], row['price'], 
+                 supplier=row['supplier'], storage_location=row['storage_location'], id=row['id'])
+        parts.append(p)
+    return parts
 
 def update_part(part):
     conn = sqlite3.connect(DB_NAME)
@@ -236,6 +259,8 @@ def delete_part(part_id):
     cursor.execute("DELETE FROM parts WHERE id=?", (part_id,))
     conn.commit()
     conn.close()
+
+
 
 # --- DOCUMENTS ---
 def add_document(doc):
@@ -344,10 +369,10 @@ def add_vehicle(vehicle):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO vehicles (make, model, year, price, status, condition, mileage, color, fuel_type, vin, owner_id, tuv_due, service_due, purchase_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO vehicles (make, model, year, price, status, condition, mileage, color, fuel_type, vin, owner_id, tuv_due, service_due, purchase_price, sold_date, sold_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (vehicle.make, vehicle.model, vehicle.year, vehicle.price, vehicle.status, vehicle.condition, 
-          vehicle.mileage, vehicle.color, vehicle.fuel_type, vehicle.vin, vehicle.owner_id, vehicle.tuv_due, vehicle.service_due, vehicle.purchase_price))
+          vehicle.mileage, vehicle.color, vehicle.fuel_type, vehicle.vin, vehicle.owner_id, vehicle.tuv_due, vehicle.service_due, vehicle.purchase_price, vehicle.sold_date, vehicle.sold_price))
     conn.commit()
     conn.close()
 
@@ -375,7 +400,9 @@ def get_all_vehicles():
             owner_id=row[11] if len(row) > 11 else None,
             tuv_due=row[12] if len(row) > 12 else "",
             service_due=row[13] if len(row) > 13 else "",
-            purchase_price=row[14] if len(row) > 14 else 0.0
+            purchase_price=row[14] if len(row) > 14 else 0.0,
+            sold_date=row[15] if len(row) > 15 else "",
+            sold_price=row[16] if len(row) > 16 else 0.0
         )
         vehicles.append(v)
     return vehicles
@@ -386,10 +413,10 @@ def update_vehicle(vehicle):
     cursor.execute("""
         UPDATE vehicles 
         SET make=?, model=?, year=?, price=?, status=?, condition=?, 
-        mileage=?, color=?, fuel_type=?, vin=?, owner_id=?, tuv_due=?, service_due=?, purchase_price=?
+        mileage=?, color=?, fuel_type=?, vin=?, owner_id=?, tuv_due=?, service_due=?, purchase_price=?, sold_date=?, sold_price=?
         WHERE id=?
     """, (vehicle.make, vehicle.model, vehicle.year, vehicle.price, vehicle.status, vehicle.condition,
-          vehicle.mileage, vehicle.color, vehicle.fuel_type, vehicle.vin, vehicle.owner_id, vehicle.tuv_due, vehicle.service_due, vehicle.purchase_price, vehicle.id))
+          vehicle.mileage, vehicle.color, vehicle.fuel_type, vehicle.vin, vehicle.owner_id, vehicle.tuv_due, vehicle.service_due, vehicle.purchase_price, vehicle.sold_date, vehicle.sold_price, vehicle.id))
     conn.commit()
     conn.close()
 
@@ -442,6 +469,38 @@ def update_customer(customer):
                    (customer.name, customer.phone, customer.email, customer.address, customer.status, customer.notes, customer.id))
     conn.commit()
     conn.close()
+
+def get_monthly_sales(year=None):
+    if year is None:
+        year = datetime.now().year
+    
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Use strftime to extract month from YYYY-MM-DD
+    cursor.execute("""
+        SELECT strftime('%m', sold_date) as month, SUM(sold_price - purchase_price) as profit, COUNT(*) as count, SUM(sold_price) as revenue
+        FROM vehicles 
+        WHERE status='Verkauft' AND strftime('%Y', sold_date) = ?
+        GROUP BY month
+        ORDER BY month
+    """, (str(year),))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    data = {}
+    for i in range(1, 13):
+        data[str(i).zfill(2)] = {'profit': 0.0, 'count': 0, 'revenue': 0.0}
+        
+    for row in rows:
+        month = row[0]
+        if month in data:
+            data[month]['profit'] = row[1] if row[1] else 0.0
+            data[month]['count'] = row[2]
+            data[month]['revenue'] = row[3] if row[3] else 0.0
+            
+    return data
 
 def get_stats():
     conn = sqlite3.connect(DB_NAME)
@@ -506,6 +565,13 @@ def add_attachment(attachment):
         INSERT INTO attachments (vehicle_id, file_path, file_type, upload_date, service_id) 
         VALUES (?, ?, ?, ?, ?)
     """, (attachment.vehicle_id, attachment.file_path, attachment.file_type, attachment.upload_date, attachment.service_id))
+    conn.commit()
+    conn.close()
+
+def delete_attachment(att_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM attachments WHERE id = ?", (att_id,))
     conn.commit()
     conn.close()
 

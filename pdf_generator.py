@@ -2,12 +2,35 @@
 from fpdf import FPDF
 import datetime
 import os
+from path_utils import get_writable_path
 
 class PDFGenerator:
     def __init__(self, output_dir="documents"):
-        self.output_dir = output_dir
+        self.output_dir = get_writable_path(output_dir)
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
+        
+        # Load contract conditions
+        self.conditions_file = get_writable_path("contract_conditions.txt")
+        if not os.path.exists(self.conditions_file):
+            try:
+                with open(self.conditions_file, "w", encoding="utf-8") as f:
+                    f.write("Das Fahrzeug wird wie besichtigt und unter Ausschluss jeglicher Gewährleistung verkauft, "
+                            "soweit nicht nachfolgend ausdrücklich etwas anderes vereinbart wird.\n"
+                            "Der Ausschluss gilt nicht für Schadensersatzansprüche aus grob fahrlässiger "
+                            "oder vorsätzlicher Verletzung von Pflichten des Verkäufers sowie für jede Verletzung "
+                            "von Leben, Körper und Gesundheit.")
+            except Exception as e:
+                print(f"Error creating default conditions file: {e}")
+
+    def get_contract_conditions(self):
+        try:
+            if os.path.exists(self.conditions_file):
+                with open(self.conditions_file, "r", encoding="utf-8") as f:
+                    return f.read()
+            return "Standard-Gewährleistungstext nicht gefunden."
+        except Exception as e:
+            return f"Fehler beim Laden der Vertragsbedingungen: {e}"
 
     def generate_sales_contract(self, vehicle, customer, price, date=None):
         if date is None:
@@ -80,11 +103,29 @@ class PDFGenerator:
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 10, "5. Gewährleistung / Zustand", 0, 1)
         pdf.set_font("Arial", "", 10)
-        text = ("Das Fahrzeug wird wie besichtigt und unter Ausschluss jeglicher Gewährleistung verkauft, "
-                "soweit nicht nachfolgend ausdrücklich etwas anderes vereinbart wird. "
-                "Der Ausschluss gilt nicht für Schadensersatzansprüche aus grob fahrlässiger "
-                "oder vorsätzlicher Verletzung von Pflichten des Verkäufers sowie für jede Verletzung "
-                "von Leben, Körper und Gesundheit.")
+        
+        # Load text from file
+        text = self.get_contract_conditions()
+        
+        # Sanitize text for FPDF (Latin-1)
+        replacements = {
+            "€": "EUR",
+            "–": "-",
+            "’": "'",
+            "“": '"',
+            "”": '"',
+            "„": '"'
+        }
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+            
+        try:
+            # Test encoding
+            text.encode('latin-1')
+        except UnicodeEncodeError:
+            # Replace unsupported characters with '?'
+            text = text.encode('latin-1', 'replace').decode('latin-1')
+        
         pdf.multi_cell(0, 5, text)
         pdf.ln(5)
 

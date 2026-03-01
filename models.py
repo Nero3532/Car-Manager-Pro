@@ -1,5 +1,5 @@
 class Vehicle:
-    def __init__(self, make, model, year, price, status, condition, mileage=0, color="", fuel_type="", vin="", owner_id=None, tuv_due="", service_due="", purchase_price=0.0, id=None):
+    def __init__(self, make, model, year, price, status, condition, mileage=0, color="", fuel_type="", vin="", owner_id=None, tuv_due="", service_due="", purchase_price=0.0, sold_date="", sold_price=0.0, id=None):
         self.id = id
         self.make = make
         self.model = model
@@ -15,6 +15,8 @@ class Vehicle:
         self.tuv_due = tuv_due
         self.service_due = service_due
         self.purchase_price = purchase_price
+        self.sold_date = sold_date
+        self.sold_price = sold_price
 
     def __str__(self):
         return f"[{self.id}] {self.make} {self.model} ({self.year}) - {self.price}€"

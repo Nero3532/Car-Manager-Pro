@@ -16,6 +16,10 @@ import zipfile
 import email_utils
 import requests
 from pdf_generator import PDFGenerator
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+from PIL import Image, ImageTk
 
 CURRENT_VERSION = "1.0.1"
 
@@ -32,32 +36,40 @@ class LoginDialog:
         self.parent = parent
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Login - CAR Manager Pro")
-        self.dialog.geometry("300x180")
+        self.dialog.geometry("360x220")
         self.dialog.resizable(False, False)
-        self.dialog.transient(parent)
         
         # Center
         self.dialog.update_idletasks()
-        width = 300
-        height = 180
+        width = 360
+        height = 220
         x = (self.dialog.winfo_screenwidth() // 2) - (width // 2)
         y = (self.dialog.winfo_screenheight() // 2) - (height // 2)
         self.dialog.geometry(f'{width}x{height}+{x}+{y}')
         
-        ttk.Label(self.dialog, text="🔒 Geschützter Bereich", font=("Helvetica", 12, "bold")).pack(pady=15)
-        ttk.Label(self.dialog, text="Bitte Passwort eingeben:", font=("Helvetica", 10)).pack(pady=5)
+        # Main Frame
+        main_frame = ttk.Frame(self.dialog, padding=20)
+        main_frame.pack(fill="both", expand=True)
+
+        ttk.Label(main_frame, text="🔒 Geschützter Bereich", font=("Segoe UI", 14, "bold"), bootstyle="primary").pack(pady=(0, 20))
         
+        input_frame = ttk.Frame(main_frame)
+        input_frame.pack(fill="x", pady=10)
+        
+        ttk.Label(input_frame, text="Passwort:", font=("Segoe UI", 10)).pack(anchor="w")
         self.password_var = tk.StringVar()
-        self.entry = ttk.Entry(self.dialog, show="*", textvariable=self.password_var)
-        self.entry.pack(pady=5, padx=40, fill="x")
+        self.entry = ttk.Entry(input_frame, show="•", textvariable=self.password_var, font=("Segoe UI", 10))
+        self.entry.pack(fill="x", pady=5)
         self.entry.focus_set()
         
-        ttk.Button(self.dialog, text="Anmelden", command=self.check_login, style="primary.TButton").pack(pady=15)
+        ttk.Button(main_frame, text="Anmelden", command=self.check_login, style="success.TButton", width=15).pack(pady=15)
         
         self.dialog.protocol("WM_DELETE_WINDOW", self.on_close)
         self.entry.bind("<Return>", lambda e: self.check_login())
         
         self.success = False
+        if parent.state() != 'withdrawn':
+             self.dialog.transient(parent)
         self.parent.wait_window(self.dialog)
 
     def check_login(self):
@@ -68,11 +80,13 @@ class LoginDialog:
             self.success = True
             self.dialog.destroy()
         else:
-            messagebox.showerror("Zugriff verweigert", "Falsches Passwort!")
+            messagebox.showerror("Zugriff verweigert", "Falsches Passwort!", parent=self.dialog)
             self.entry.delete(0, 'end')
 
     def on_close(self):
         self.dialog.destroy()
+
+from path_utils import resource_path, get_writable_path
 
 class CarManagerApp:
     def __init__(self, root):
@@ -80,25 +94,32 @@ class CarManagerApp:
         
         # Login Check
         self.root.withdraw()
+        
+        # Ensure database is initialized before login
+        try:
+             # Ensure database directory exists
+            db_path = get_writable_path("car_manager.db")
+            if not os.path.exists(os.path.dirname(db_path)):
+                 os.makedirs(os.path.dirname(db_path))
+            
+            database.init_db()
+        except Exception as e:
+            messagebox.showerror("Fehler", f"Datenbankfehler: {e}")
+
         login = LoginDialog(self.root)
+        
         if not login.success:
             self.root.destroy()
             sys.exit()
+        
         self.root.deiconify()
         
-        self.root.title("CAR Manager Pro")
-        self.root.geometry("1200x800")
+        self.root.title("CAR Manager Pro v2.0")
+        self.root.geometry("1280x850")
         
         # Set Window Icon
         try:
-            if getattr(sys, 'frozen', False):
-                # Running as compiled exe
-                application_path = sys._MEIPASS
-            else:
-                # Running as script
-                application_path = os.path.dirname(os.path.abspath(__file__))
-            
-            icon_path = os.path.join(application_path, 'app_icon.ico')
+            icon_path = resource_path('app_icon.ico')
             if os.path.exists(icon_path):
                 self.root.iconbitmap(icon_path)
         except Exception as e:
@@ -106,37 +127,13 @@ class CarManagerApp:
         
         self.pdf_gen = PDFGenerator()
         
-        # Style (handled by ttkbootstrap Window)
-        
-        self.tab_control = ttk.Notebook(root)
-        
-        self.tab_dashboard = ttk.Frame(self.tab_control)
-        self.tab_inventory = ttk.Frame(self.tab_control)
-        self.tab_customers = ttk.Frame(self.tab_control)
-        self.tab_workshop = ttk.Frame(self.tab_control)
-        self.tab_test_drives = ttk.Frame(self.tab_control)
-        self.tab_parts = ttk.Frame(self.tab_control)
-        self.tab_documents = ttk.Frame(self.tab_control)
-        
-        self.tab_control.add(self.tab_dashboard, text='📊 Dashboard')
-        self.tab_control.add(self.tab_inventory, text='🚗 Fahrzeugbestand')
-        self.tab_control.add(self.tab_customers, text='👥 Kunden')
-        self.tab_control.add(self.tab_workshop, text='🛠️ Werkstatt')
-        self.tab_control.add(self.tab_test_drives, text='🏁 Probefahrten')
-        self.tab_control.add(self.tab_parts, text='🔧 Ersatzteile')
-        self.tab_control.add(self.tab_documents, text='📄 Dokumente')
-        
-        self.tab_calendar = ttk.Frame(self.tab_control)
-        self.tab_control.add(self.tab_calendar, text='📅 Kalender')
-
-        self.tab_settings = ttk.Frame(self.tab_control)
-        self.tab_control.add(self.tab_settings, text='⚙️ Einstellungen')
-        
-        self.tab_control.pack(expand=1, fill="both")
+        # --- NEW MODERN LAYOUT ---
+        self.setup_sidebar_layout()
         
         self.create_menu()
         
-        # Init Tabs
+        # Init Content Frames (lazy loading or init all)
+        # We init all to keep existing logic working
         self.setup_dashboard()
         self.setup_inventory()
         self.setup_customers()
@@ -150,7 +147,117 @@ class CarManagerApp:
         # Initial Data Load
         self.refresh_all()
         
+        # Show Dashboard initially
+        self.show_dashboard()
+        
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def setup_sidebar_layout(self):
+        # Main Container
+        main_container = ttk.Frame(self.root)
+        main_container.pack(fill="both", expand=True)
+        
+        # Sidebar
+        self.sidebar = ttk.Frame(main_container, width=240, bootstyle="dark")
+        self.sidebar.pack(side="left", fill="y")
+        self.sidebar.pack_propagate(False)
+        
+        # Logo / Title
+        title_frame = ttk.Frame(self.sidebar, bootstyle="dark", padding=20)
+        title_frame.pack(fill="x")
+        ttk.Label(title_frame, text="CAR Manager", font=("Segoe UI", 18, "bold"), bootstyle="inverse-dark").pack(anchor="w")
+        ttk.Label(title_frame, text="Professional Edition", font=("Segoe UI", 10), bootstyle="inverse-dark", foreground="#aaaaaa").pack(anchor="w")
+        
+        ttk.Separator(self.sidebar, bootstyle="secondary").pack(fill="x", padx=20, pady=10)
+        
+        # Navigation
+        self.nav_frame = ttk.Frame(self.sidebar, bootstyle="dark")
+        self.nav_frame.pack(fill="both", expand=True, padx=10)
+        
+        self.nav_buttons = {}
+        
+        # Helper to create nav buttons
+        def create_nav_btn(text, command, icon="🔹"):
+            btn = ttk.Button(
+                self.nav_frame, 
+                text=f" {icon}  {text}", 
+                command=command, 
+                style="secondary.TButton", 
+                width=25,
+                padding=10
+            )
+            btn.pack(fill="x", pady=2)
+            return btn
+
+        self.nav_buttons["Dashboard"] = create_nav_btn("Dashboard", self.show_dashboard, "📊")
+        self.nav_buttons["Inventory"] = create_nav_btn("Fahrzeuge", self.show_inventory, "🚗")
+        self.nav_buttons["Customers"] = create_nav_btn("Kunden", self.show_customers, "👥")
+        self.nav_buttons["Workshop"] = create_nav_btn("Werkstatt", self.show_workshop, "🛠️")
+        self.nav_buttons["TestDrives"] = create_nav_btn("Probefahrten", self.show_test_drives, "🏁")
+        self.nav_buttons["Parts"] = create_nav_btn("Ersatzteile", self.show_parts, "🔧")
+        self.nav_buttons["Documents"] = create_nav_btn("Dokumente", self.show_documents, "📄")
+        self.nav_buttons["Calendar"] = create_nav_btn("Kalender", self.show_calendar, "📅")
+        self.nav_buttons["Stats"] = create_nav_btn("Statistik", self.show_stats, "📈")
+        
+        ttk.Separator(self.nav_frame, bootstyle="secondary").pack(fill="x", pady=10)
+        self.nav_buttons["Settings"] = create_nav_btn("Einstellungen", self.show_settings, "⚙️")
+
+        # Theme Toggle
+        bottom_frame = ttk.Frame(self.sidebar, bootstyle="dark", padding=20)
+        bottom_frame.pack(side="bottom", fill="x")
+        self.btn_theme = ttk.Button(bottom_frame, text="🌓 Modus", command=self.toggle_theme, style="secondary.TButton")
+        self.btn_theme.pack(fill="x")
+
+        # Content Area
+        self.content_area = ttk.Frame(main_container, padding=20)
+        self.content_area.pack(side="right", fill="both", expand=True)
+        
+        # Initialize Frames Container
+        self.tab_dashboard = ttk.Frame(self.content_area)
+        self.tab_inventory = ttk.Frame(self.content_area)
+        self.tab_customers = ttk.Frame(self.content_area)
+        self.tab_workshop = ttk.Frame(self.content_area)
+        self.tab_test_drives = ttk.Frame(self.content_area)
+        self.tab_parts = ttk.Frame(self.content_area)
+        self.tab_documents = ttk.Frame(self.content_area)
+        self.tab_calendar = ttk.Frame(self.content_area)
+        self.tab_stats = ttk.Frame(self.content_area)
+        self.tab_settings = ttk.Frame(self.content_area)
+        
+        # Stack frames
+        for frame in [self.tab_dashboard, self.tab_inventory, self.tab_customers, 
+                      self.tab_workshop, self.tab_test_drives, self.tab_parts, 
+                      self.tab_documents, self.tab_calendar, self.tab_stats, self.tab_settings]:
+            frame.place(x=0, y=0, relwidth=1, relheight=1)
+
+    def show_frame(self, frame, btn_name):
+        frame.tkraise()
+        # Highlight active button
+        for name, btn in self.nav_buttons.items():
+            if name == btn_name:
+                btn.configure(style="primary.TButton")
+            else:
+                btn.configure(style="secondary.TButton")
+
+    def show_dashboard(self): self.show_frame(self.tab_dashboard, "Dashboard")
+    def show_inventory(self): self.show_frame(self.tab_inventory, "Inventory")
+    def show_customers(self): self.show_frame(self.tab_customers, "Customers")
+    def show_workshop(self): self.show_frame(self.tab_workshop, "Workshop")
+    def show_test_drives(self): self.show_frame(self.tab_test_drives, "TestDrives")
+    def show_parts(self): self.show_frame(self.tab_parts, "Parts")
+    def show_documents(self): self.show_frame(self.tab_documents, "Documents")
+    def show_calendar(self): self.show_frame(self.tab_calendar, "Calendar")
+    def show_stats(self):
+        self.show_frame(self.tab_stats, "Stats")
+        self.setup_stats_tab()
+    def show_settings(self): self.show_frame(self.tab_settings, "Settings")
+
+
+    def toggle_theme(self):
+        current = self.root.style.theme_use()
+        new_theme = "flatly" if current == "superhero" else "superhero"
+        self.root.style.theme_use(new_theme)
+        database.set_setting("theme", new_theme)
 
     def on_closing(self):
         # Auto-backup on exit
@@ -169,7 +276,7 @@ class CarManagerApp:
             return
             
         # Step 2: Dashboard
-        self.tab_control.select(self.tab_dashboard)
+        self.show_dashboard()
         self.root.update()
         messagebox.showinfo("Tutorial: Dashboard", 
             "Das ist das Dashboard.\n\n"
@@ -180,7 +287,7 @@ class CarManagerApp:
             "- Umsatzverlauf des aktuellen Jahres")
             
         # Step 3: Inventory
-        self.tab_control.select(self.tab_inventory)
+        self.show_inventory()
         self.root.update()
         messagebox.showinfo("Tutorial: Fahrzeugbestand", 
             "Hier verwalten Sie Ihren Fahrzeugbestand.\n\n"
@@ -189,14 +296,14 @@ class CarManagerApp:
             "- Doppelklick öffnet die Details.")
 
         # Step 4: Customers
-        self.tab_control.select(self.tab_customers)
+        self.show_customers()
         self.root.update()
         messagebox.showinfo("Tutorial: Kunden", 
             "Verwalten Sie hier Ihre Kundendaten.\n\n"
             "Sie können Kunden anlegen, bearbeiten und direkt Emails senden.")
             
         # Step 6: Workshop
-        self.tab_control.select(self.tab_workshop)
+        self.show_workshop()
         self.root.update()
         messagebox.showinfo("Tutorial: Werkstatt", 
             "Planen Sie Werkstatt-Aufenthalte.\n\n"
@@ -205,7 +312,7 @@ class CarManagerApp:
             "- Historie pro Fahrzeug einsehen")
             
         # Step 7: Settings
-        self.tab_control.select(self.tab_settings)
+        self.show_settings()
         self.root.update()
         messagebox.showinfo("Tutorial: Einstellungen", 
             "Hier konfigurieren Sie das Programm:\n\n"
@@ -215,7 +322,7 @@ class CarManagerApp:
             "- Datenbank-Backup erstellen")
             
         # End
-        self.tab_control.select(self.tab_dashboard)
+        self.show_dashboard()
         messagebox.showinfo("Tutorial Beendet", "Das war der Überblick! Viel Erfolg mit CAR Manager Pro.")
 
     def refresh_all(self):
@@ -238,54 +345,83 @@ class CarManagerApp:
         self.dash_frame = ttk.Frame(self.tab_dashboard, padding=20)
         self.dash_frame.pack(fill="both", expand=True)
         
-        ttk.Label(self.dash_frame, text="Willkommen im CAR Manager", font=("Helvetica", 24)).pack(pady=10)
+        # Header
+        header = ttk.Frame(self.dash_frame)
+        header.pack(fill="x", pady=(0, 20))
+        ttk.Label(header, text="Dashboard", font=("Segoe UI", 24, "bold")).pack(side="left")
+        try:
+             # Use German locale if possible, else default
+             import locale
+             locale.setlocale(locale.LC_TIME, '')
+        except:
+             pass
+        ttk.Label(header, text=datetime.now().strftime("%A, %d. %B %Y"), font=("Segoe UI", 12)).pack(side="right", pady=10)
         
-        self.stats_frame = ttk.Frame(self.dash_frame)
-        self.stats_frame.pack(fill="x", pady=10)
+        # Stats Cards Grid
+        stats_container = ttk.Frame(self.dash_frame)
+        stats_container.pack(fill="x", pady=10)
         
-        self.lbl_total_cars = ttk.Label(self.stats_frame, text="Fahrzeuge: 0", font=("Helvetica", 14))
-        self.lbl_total_cars.pack(side="left", padx=20)
-        
-        self.lbl_total_value = ttk.Label(self.stats_frame, text="Gesamtwert: 0.00 €", font=("Helvetica", 14))
-        self.lbl_total_value.pack(side="left", padx=20)
-        
-        # Quick Actions
-        qa_frame = ttk.Labelframe(self.dash_frame, text="Schnellzugriff", padding=10)
-        qa_frame.pack(fill="x", pady=10, padx=20)
+        # Helper for cards
+        def create_card(parent, title, icon, color):
+            card = ttk.Frame(parent, bootstyle=color, padding=15)
+            card.pack(side="left", fill="both", expand=True, padx=10)
+            
+            top_row = ttk.Frame(card, bootstyle=color)
+            top_row.pack(fill="x")
+            ttk.Label(top_row, text=title, font=("Segoe UI", 11), bootstyle=f"inverse-{color}").pack(side="left")
+            ttk.Label(top_row, text=icon, font=("Segoe UI", 20), bootstyle=f"inverse-{color}").pack(side="right")
+            
+            val_label = ttk.Label(card, text="0", font=("Segoe UI", 22, "bold"), bootstyle=f"inverse-{color}")
+            val_label.pack(anchor="w", pady=(10, 0))
+            return val_label
 
-        btn_style = "info.TButton" 
+        self.lbl_stat_cars = create_card(stats_container, "Fahrzeuge", "🚗", "primary")
+        self.lbl_stat_value = create_card(stats_container, "Gesamtwert", "💶", "success")
+        self.lbl_stat_cust = create_card(stats_container, "Kunden", "👥", "info")
+        self.lbl_stat_tasks = create_card(stats_container, "Offene Aufgaben", "📅", "warning")
         
-        ttk.Button(qa_frame, text="➕ Neues Fahrzeug", style=btn_style, width=20, 
-                   command=lambda: self.open_vehicle_dialog(None)).pack(side="left", padx=10)
+        # Main Content Grid
+        content_grid = ttk.Frame(self.dash_frame)
+        content_grid.pack(fill="both", expand=True, pady=20)
         
-        ttk.Button(qa_frame, text="👤 Neuer Kunde", style=btn_style, width=20,
-                   command=lambda: self.open_customer_dialog(None)).pack(side="left", padx=10)
+        # Left: Quick Actions
+        left_col = ttk.Frame(content_grid)
+        left_col.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        
+        ttk.Label(left_col, text="Schnellzugriff", font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(0, 10))
+        
+        qa_frame = ttk.Frame(left_col)
+        qa_frame.pack(fill="x")
+        
+        btn_width = 25
+        ttk.Button(qa_frame, text="➕ Neues Fahrzeug", style="outline-primary.TButton", width=btn_width,
+                   command=lambda: self.open_vehicle_dialog(None)).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
                    
-        ttk.Button(qa_frame, text="🏁 Neue Probefahrt", style=btn_style, width=20,
-                   command=self.open_test_drive_dialog).pack(side="left", padx=10)
+        ttk.Button(qa_frame, text="👤 Neuer Kunde", style="outline-info.TButton", width=btn_width,
+                   command=lambda: self.open_customer_dialog(None)).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
                    
-        ttk.Button(qa_frame, text="📧 Email senden", style=btn_style, width=20,
-                   command=lambda: self.open_email_dialog()).pack(side="left", padx=10)
+        ttk.Button(qa_frame, text="🏁 Neue Probefahrt", style="outline-success.TButton", width=btn_width,
+                   command=self.open_test_drive_dialog).grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+                   
+        ttk.Button(qa_frame, text="📧 Email senden", style="outline-secondary.TButton", width=btn_width,
+                   command=lambda: self.open_email_dialog()).grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
-        # Content Frame (Todos & Chart)
-        content_frame = ttk.Frame(self.dash_frame)
-        content_frame.pack(fill="both", expand=True, padx=20, pady=5)
+        # Right: To-Do List
+        right_col = ttk.Frame(content_grid)
+        right_col.pack(side="right", fill="both", expand=True, padx=(10, 0))
         
-        # Left: To-Do
-        todo_frame = ttk.Labelframe(content_frame, text="📅 To-Do Liste (Heute)", padding=10)
-        todo_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        ttk.Label(right_col, text="To-Do Liste (Heute)", font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(0, 10))
         
-        self.todo_list = tk.Listbox(todo_frame, font=("Segoe UI", 10), height=8, activestyle='none')
+        self.todo_list = tk.Listbox(right_col, font=("Segoe UI", 11), height=10, activestyle='none', borderwidth=0, highlightthickness=0)
         self.todo_list.pack(fill="both", expand=True)
 
     def update_dashboard(self):
         stats = database.get_stats()
         
-        self.lbl_total_cars.config(text=f"Fahrzeuge: {stats['total_count']}")
-        self.lbl_total_value.config(text=f"Gesamtwert: {stats['total_value']:,.2f} €")
+        # Update Cards
+        self.lbl_stat_cars.config(text=str(stats['total_count']))
+        self.lbl_stat_value.config(text=f"{stats['total_value']:,.0f} €")
         
-        # Update To-Do
-        self.todo_list.delete(0, "end")
         today = datetime.now().strftime("%Y-%m-%d")
         todos = database.get_todos_for_date(today)
         
@@ -297,18 +433,38 @@ class CarManagerApp:
                  todos.insert(0, {"type": "Bestand", "text": f"Nachbestellen: {p.name} ({p.quantity} Stk)", "id": p.id})
         except:
             pass
+            
+        self.lbl_stat_tasks.config(text=str(len(todos)))
+        
+        # Customer count
+        try:
+             custs = database.get_customers()
+             self.lbl_stat_cust.config(text=str(len(custs)))
+        except:
+             self.lbl_stat_cust.config(text="-")
 
+        # Update To-Do List
+        self.todo_list.delete(0, "end")
+        
         if not todos:
-            self.todo_list.insert("end", "Keine Aufgaben für heute.")
-            self.todo_list.config(fg="gray")
+            self.todo_list.insert("end", "✅ Alles erledigt!")
+            self.todo_list.config(fg="#888888")
         else:
             self.todo_list.config(fg="black")
             for t in todos:
-                self.todo_list.insert("end", f"[{t['type']}] {t['text']}")
-                if t['type'] == 'TÜV': self.todo_list.itemconfig("end", {'bg': '#ffeebb', 'fg': 'black'})
-                if t['type'] == 'Service': self.todo_list.itemconfig("end", {'bg': '#eebbff', 'fg': 'black'})
-                if t['type'] == 'Probefahrt': self.todo_list.itemconfig("end", {'bg': '#bbeeaa', 'fg': 'black'})
-                if t['type'] == 'Bestand': self.todo_list.itemconfig("end", {'bg': '#ffcccc', 'fg': 'black'})
+                icon = "🔹"
+                if t['type'] == 'TÜV': icon = "📅"
+                if t['type'] == 'Service': icon = "🛠️"
+                if t['type'] == 'Probefahrt': icon = "🏁"
+                if t['type'] == 'Bestand': icon = "⚠️"
+                
+                self.todo_list.insert("end", f"{icon} {t['text']}")
+                
+                # Colors handled by Listbox itemconfig - adjust for dark theme visibility
+                idx = self.todo_list.size() - 1
+                if t['type'] == 'Bestand': self.todo_list.itemconfig(idx, {'fg': '#d9534f'}) # red
+                elif t['type'] == 'TÜV': self.todo_list.itemconfig(idx, {'fg': '#f0ad4e'}) # orange
+
 
     def create_menu(self):
         menubar = tk.Menu(self.root)
@@ -637,6 +793,78 @@ class CarManagerApp:
         btn_send.pack(pady=10)
 
     # --- INVENTORY ---
+    def setup_stats_tab(self):
+        for widget in self.tab_stats.winfo_children():
+            widget.destroy()
+
+        header = ttk.Frame(self.tab_stats)
+        header.pack(fill="x", pady=20, padx=20)
+        ttk.Label(header, text="Statistiken & Auswertungen", font=("Segoe UI", 24, "bold")).pack(side="left")
+
+        controls = ttk.Frame(self.tab_stats)
+        controls.pack(fill="x", pady=10, padx=20)
+
+        ttk.Label(controls, text="Jahr:").pack(side="left", padx=5)
+        current_year = datetime.now().year
+        self.combo_stats_year = ttk.Combobox(controls, values=[str(y) for y in range(current_year-5, current_year+1)], width=10, state="readonly")
+        self.combo_stats_year.set(str(current_year))
+        self.combo_stats_year.pack(side="left", padx=5)
+        
+        ttk.Button(controls, text="Aktualisieren", command=self.update_stats_charts, style="primary.TButton").pack(side="left", padx=10)
+
+        self.charts_container = ttk.Frame(self.tab_stats)
+        self.charts_container.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        self.update_stats_charts()
+
+    def update_stats_charts(self):
+        for widget in self.charts_container.winfo_children():
+            widget.destroy()
+
+        try:
+            year = int(self.combo_stats_year.get())
+        except:
+            year = datetime.now().year
+
+        data = database.get_monthly_sales(year)
+
+        months = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
+        # Data is dict: "01": {profit, count, revenue}
+        profits = []
+        revenues = []
+        counts = []
+        
+        for i in range(1, 13):
+            m_key = str(i).zfill(2)
+            d = data.get(m_key, {'profit':0, 'revenue':0, 'count':0})
+            profits.append(d['profit'])
+            revenues.append(d['revenue'])
+            counts.append(d['count'])
+
+        # Create Figure
+        fig = Figure(figsize=(10, 6), dpi=100)
+        
+        # Plot 1: Revenue vs Profit
+        ax1 = fig.add_subplot(211)
+        ax1.bar(months, revenues, label="Umsatz (€)", alpha=0.6, color="#3498db")
+        ax1.plot(months, profits, label="Gewinn (€)", color="#2ecc71", marker="o", linewidth=2)
+        ax1.set_title(f"Finanzübersicht {year}")
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        
+        # Plot 2: Sales Count
+        ax2 = fig.add_subplot(212)
+        ax2.bar(months, counts, color="#e74c3c", alpha=0.6, label="Verkäufe")
+        ax2.set_title(f"Verkaufte Fahrzeuge {year}")
+        ax2.set_yticks(range(0, int(max(counts)+2)))
+        ax2.grid(True, axis='y', alpha=0.3)
+        
+        fig.tight_layout()
+        
+        canvas = FigureCanvasTkAgg(fig, master=self.charts_container)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
     def setup_inventory(self):
         top_frame = ttk.Frame(self.tab_inventory, padding=10)
         top_frame.pack(fill="x")
@@ -684,6 +912,8 @@ class CarManagerApp:
         self.inv_menu.add_command(label="📄 Angebot erstellen", command=lambda: self.create_document_dialog("Angebot", self._get_selected_vehicle()))
         self.inv_menu.add_command(label="🤝 Kaufvertrag erstellen", command=lambda: self.create_document_dialog("Kaufvertrag", self._get_selected_vehicle()))
         self.inv_menu.add_command(label="🤝 Kaufvertrag als PDF", command=self._context_save_contract_pdf)
+        self.inv_menu.add_separator()
+        self.inv_menu.add_command(label="💰 Als Verkauft markieren", command=self.mark_vehicle_sold)
         
         self.tree.bind("<Button-3>", lambda e: self._on_right_click(e, self.tree, self.inv_menu))
 
@@ -757,6 +987,46 @@ class CarManagerApp:
                     os.startfile(dest)
         except Exception as e:
              messagebox.showerror("Fehler", f"PDF Erstellung fehlgeschlagen: {e}")
+
+    def mark_vehicle_sold(self):
+        v = self._get_selected_vehicle()
+        if not v: return
+        
+        # Dialog for Date and Price
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Verkauf erfassen")
+        dialog.geometry("400x350")
+        
+        ttk.Label(dialog, text=f"Verkauf von {v.make} {v.model}", font=("bold", 12)).pack(pady=10)
+        
+        ttk.Label(dialog, text="Verkaufsdatum (YYYY-MM-DD):").pack(anchor="w", padx=20)
+        entry_date = ttk.Entry(dialog)
+        entry_date.insert(0, datetime.now().strftime("%Y-%m-%d"))
+        entry_date.pack(fill="x", padx=20, pady=5)
+        
+        ttk.Label(dialog, text="Verkaufspreis (€):").pack(anchor="w", padx=20)
+        entry_price = ttk.Entry(dialog)
+        entry_price.insert(0, str(v.price))
+        entry_price.pack(fill="x", padx=20, pady=5)
+        
+        def save():
+            try:
+                s_date = entry_date.get()
+                s_price = float(entry_price.get())
+                
+                v.status = "Verkauft"
+                v.sold_date = s_date
+                v.sold_price = s_price
+                
+                database.update_vehicle(v)
+                self.load_inventory()
+                self.update_dashboard()
+                dialog.destroy()
+                messagebox.showinfo("Erfolg", "Fahrzeug als verkauft markiert!")
+            except ValueError:
+                messagebox.showerror("Fehler", "Ungültiger Preis!")
+        
+        ttk.Button(dialog, text="Speichern", command=save, style="success.TButton").pack(pady=20)
 
     def load_inventory(self):
         self.all_vehicles = database.get_all_vehicles()
@@ -927,25 +1197,84 @@ class CarManagerApp:
             entries['purchase_price'].insert(0, "0.0")
 
         # --- PHOTOS TAB ---
-        photo_frame = ttk.Frame(tab_photos, padding=10)
-        photo_frame.pack(fill="both", expand=True)
+        # Gallery Frame
+        gallery_frame = ttk.Frame(tab_photos)
+        gallery_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
-        photo_cols = ("Dateiname", "Datum")
-        photo_tree = ttk.Treeview(photo_frame, columns=photo_cols, show="headings")
-        photo_tree.heading("Dateiname", text="Dateiname")
-        photo_tree.heading("Datum", text="Datum")
-        photo_tree.pack(fill="both", expand=True, pady=10)
+        # Controls
+        controls_frame = ttk.Frame(gallery_frame)
+        controls_frame.pack(fill="x", pady=5)
         
-        def load_photos():
-            for item in photo_tree.get_children():
-                photo_tree.delete(item)
-            if vehicle:
-                atts = database.get_attachments(vehicle.id)
-                # Show only photos (no service_id)
-                photos = [a for a in atts if a.service_id is None]
-                for p in photos:
-                    fname = os.path.basename(p.file_path)
-                    photo_tree.insert("", "end", values=(fname, p.upload_date), tags=(p.file_path,))
+        # Scrollable Canvas
+        canvas = tk.Canvas(gallery_frame, bg="#2c3e50" if "superhero" in self.root.style.theme_use() else "#ecf0f1")
+        scrollbar = ttk.Scrollbar(gallery_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        dialog.gallery_refs = [] # Keep references attached to dialog
+
+        def load_gallery():
+            for widget in scrollable_frame.winfo_children():
+                widget.destroy()
+            dialog.gallery_refs.clear()
+            
+            if not vehicle: return
+            
+            atts = database.get_attachments(vehicle.id)
+            photos = [a for a in atts if a.service_id is None and a.file_type in ('photo', 'image')]
+            # Fallback
+            if not photos:
+                photos = [a for a in atts if a.service_id is None and a.file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))]
+            
+            if not photos:
+                ttk.Label(scrollable_frame, text="Keine Bilder vorhanden.", font=("Segoe UI", 10, "italic")).pack(pady=20, padx=20)
+                return
+
+            row, col = 0, 0
+            MAX_COLS = 3
+            
+            for p in photos:
+                try:
+                    img = Image.open(p.file_path)
+                    img.thumbnail((150, 150))
+                    photo = ImageTk.PhotoImage(img)
+                    dialog.gallery_refs.append(photo)
+                    
+                    frame = ttk.Frame(scrollable_frame, borderwidth=1, relief="solid")
+                    frame.grid(row=row, column=col, padx=10, pady=10)
+                    
+                    lbl = ttk.Label(frame, image=photo, cursor="hand2")
+                    lbl.pack(padx=2, pady=2)
+                    lbl.bind("<Button-1>", lambda e, path=p.file_path: os.startfile(path))
+                    
+                    # Context Menu
+                    menu = tk.Menu(self.root, tearoff=0)
+                    menu.add_command(label="🗑 Löschen", command=lambda aid=p.id: delete_photo(aid))
+                    lbl.bind("<Button-3>", lambda e, m=menu: m.post(e.x_root, e.y_root))
+                    
+                    ttk.Label(frame, text=os.path.basename(p.file_path)[:15]+"...", font=("Arial", 8)).pack()
+                    
+                    col += 1
+                    if col >= MAX_COLS:
+                        col = 0
+                        row += 1
+                except Exception as e:
+                    print(f"Error loading image {p.file_path}: {e}")
+
+        def delete_photo(att_id):
+            if messagebox.askyesno("Löschen", "Bild wirklich löschen?"):
+                database.delete_attachment(att_id)
+                load_gallery()
 
         def add_photo():
             if not vehicle:
@@ -962,57 +1291,52 @@ class CarManagerApp:
                     shutil.copy(path, dest)
                     att = Attachment(vehicle.id, dest, "photo", datetime.now().strftime("%Y-%m-%d %H:%M"))
                     database.add_attachment(att)
-                    load_photos()
+                    load_gallery()
                 except Exception as e:
                     messagebox.showerror("Fehler", f"Fehler beim Upload: {e}")
 
-        def open_photo():
-            selected = photo_tree.selection()
-            if not selected: return
-            item = photo_tree.item(selected[0])
-            path = item['tags'][0]
-            try:
-                os.startfile(path)
-            except Exception as e:
-                messagebox.showerror("Fehler", f"Kann Datei nicht öffnen: {e}")
+        ttk.Button(controls_frame, text="📸 Foto hinzufügen", command=add_photo, style="success.TButton").pack(side="left", padx=5)
+        ttk.Label(controls_frame, text="(Rechtsklick auf Bild zum Löschen)", font=("Arial", 8, "italic")).pack(side="left", padx=10)
 
-        def save_photo():
-            selected = photo_tree.selection()
-            if not selected: return
-            item = photo_tree.item(selected[0])
-            path = item['tags'][0]
-            fname = os.path.basename(path)
-            
-            dest = filedialog.asksaveasfilename(initialfile=fname)
-            if dest:
-                try:
-                    shutil.copy(path, dest)
-                    messagebox.showinfo("Erfolg", "Foto gespeichert.")
-                except Exception as e:
-                    messagebox.showerror("Fehler", f"Fehler beim Speichern: {e}")
-
-        btn_frame = ttk.Frame(photo_frame)
-        btn_frame.pack(fill="x")
-        ttk.Button(btn_frame, text="Foto hinzufügen", command=add_photo).pack(side="left", padx=5)
-        ttk.Button(btn_frame, text="Anzeigen", command=open_photo).pack(side="left", padx=5)
-        ttk.Button(btn_frame, text="Speichern unter...", command=save_photo).pack(side="left", padx=5)
-        
         if vehicle:
-            load_photos()
+            load_gallery()
 
         def save():
             try:
                 data = {key: entry.get() for key, entry in entries.items()}
                 
-                # Validation
+                # --- VALIDATION START ---
+                errors = []
+                if not data['make']: errors.append("- Marke fehlt")
+                if not data['model']: errors.append("- Modell fehlt")
+                
                 try:
                     year_val = int(data['year']) if data['year'] else 0
+                    if year_val < 1900 or year_val > datetime.now().year + 1:
+                        errors.append(f"- Ungültiges Baujahr ({year_val})")
+                except ValueError:
+                    errors.append("- Baujahr muss eine Zahl sein")
+
+                try:
                     price_val = float(data['price']) if data['price'] else 0.0
                     purchase_price_val = float(data['purchase_price']) if data['purchase_price'] else 0.0
+                except ValueError:
+                    errors.append("- Preise müssen Zahlen sein (Punkt als Trenner)")
+
+                try:
                     mileage_val = int(data['mileage']) if data['mileage'] else 0
                 except ValueError:
-                    messagebox.showerror("Eingabefehler", "Bitte überprüfen Sie die Zahlenfelder (Jahr, Preis, KM).\nVerwenden Sie Punkt statt Komma für Preise.")
+                    errors.append("- Kilometerstand muss eine ganze Zahl sein")
+
+                if data['vin'] and len(data['vin']) != 17:
+                    # Optional warning, maybe not blocking?
+                    # Let's make it a blocking error for "Professional" feel, or strict warning.
+                    errors.append(f"- VIN muss 17 Zeichen haben (aktuell: {len(data['vin'])})")
+
+                if errors:
+                    messagebox.showerror("Eingabefehler", "Bitte korrigieren:\n" + "\n".join(errors))
                     return
+                # --- VALIDATION END ---
 
                 v = Vehicle(
                     make=data['make'], model=data['model'], year=year_val, price=price_val,
@@ -1029,9 +1353,12 @@ class CarManagerApp:
                     database.update_vehicle(v)
                 else:
                     database.add_vehicle(v)
+                    # For new vehicle, we might want to reload to enable photo upload
+                    # But dialog closes anyway.
                 
                 dialog.destroy()
                 self.refresh_all()
+                messagebox.showinfo("Erfolg", "Fahrzeug gespeichert!")
             except Exception as e:
                 messagebox.showerror("Fehler", f"Speichern fehlgeschlagen:\n{str(e)}")
                 print(f"Save error: {e}")
@@ -1191,13 +1518,105 @@ class CarManagerApp:
         
         dialog = tk.Toplevel(self.root)
         dialog.title("Service Eintrag")
-        dialog.geometry("500x650")
+        dialog.geometry("700x700")  # Increased size for parts list
         
+        # --- Description ---
         ttk.Label(dialog, text="Beschreibung / Arbeitsschritte:").pack(pady=5)
-        desc_entry = tk.Text(dialog, height=4)
+        desc_entry = tk.Text(dialog, height=3)
         desc_entry.pack(fill="x", padx=20)
         
-        # Costs
+        # --- Parts Management ---
+        parts_frame = ttk.Labelframe(dialog, text="Ersatzteile & Material", padding=10)
+        parts_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Selection Row
+        sel_frame = ttk.Frame(parts_frame)
+        sel_frame.pack(fill="x", pady=5)
+        
+        all_parts = database.get_all_parts()
+        part_map = {f"{p.name} ({p.part_number}) - {p.price:.2f}€ (Lager: {p.quantity})": p for p in all_parts}
+        part_names = list(part_map.keys())
+        
+        ttk.Label(sel_frame, text="Teil:").pack(side="left")
+        part_cb = ttk.Combobox(sel_frame, values=part_names, state="readonly", width=40)
+        part_cb.pack(side="left", padx=5)
+        
+        ttk.Label(sel_frame, text="Menge:").pack(side="left")
+        qty_entry = ttk.Entry(sel_frame, width=5)
+        qty_entry.insert(0, "1")
+        qty_entry.pack(side="left", padx=5)
+        
+        used_parts = [] # List of dicts: {'part': p, 'qty': int, 'cost': float}
+        
+        def add_part():
+            name = part_cb.get()
+            if not name: return
+            
+            try:
+                qty = int(qty_entry.get())
+                if qty <= 0: raise ValueError
+            except:
+                messagebox.showerror("Fehler", "Ungültige Menge.")
+                return
+            
+            part = part_map[name]
+            
+            # Check stock
+            current_usage = sum(item['qty'] for item in used_parts if item['part'] == part)
+            if part.quantity < (current_usage + qty):
+                if not messagebox.askyesno("Warnung", f"Nicht genug Lagerbestand (Verfügbar: {part.quantity}, Bereits hinzugefügt: {current_usage}). Trotzdem hinzufügen?"):
+                    return
+            
+            cost = part.price * qty
+            used_parts.append({'part': part, 'qty': qty, 'cost': cost})
+            
+            update_parts_list()
+            update_totals()
+            
+            # Reset
+            part_cb.set("")
+            qty_entry.delete(0, 'end')
+            qty_entry.insert(0, "1")
+
+        ttk.Button(sel_frame, text="Hinzufügen", command=add_part, style="success.TButton").pack(side="left", padx=10)
+        
+        # Parts List
+        cols = ("Teil", "Menge", "Einzelpreis", "Gesamt")
+        p_tree = ttk.Treeview(parts_frame, columns=cols, show="headings", height=5)
+        for c in cols: p_tree.heading(c, text=c)
+        p_tree.column("Teil", width=200)
+        p_tree.column("Menge", width=50)
+        p_tree.column("Einzelpreis", width=80)
+        p_tree.column("Gesamt", width=80)
+        p_tree.pack(fill="both", expand=True, pady=5)
+        
+        def remove_part():
+            sel = p_tree.selection()
+            if not sel: return
+            idx = p_tree.index(sel[0])
+            del used_parts[idx]
+            update_parts_list()
+            update_totals()
+            
+        ttk.Button(parts_frame, text="Auswahl entfernen", command=remove_part, style="danger.TButton").pack(anchor="e")
+
+        def update_parts_list():
+            for item in p_tree.get_children():
+                p_tree.delete(item)
+            for p in used_parts:
+                p_tree.insert("", "end", values=(p['part'].name, p['qty'], f"{p['part'].price:.2f}€", f"{p['cost']:.2f}€"))
+                
+        def update_totals():
+            total_parts = sum(p['cost'] for p in used_parts)
+            parts_entry.delete(0, 'end')
+            parts_entry.insert(0, f"{total_parts:.2f}")
+            
+            # Auto update material text
+            mat_text = ", ".join([f"{p['qty']}x {p['part'].name}" for p in used_parts])
+            mat_entry.delete("1.0", "end")
+            mat_entry.insert("1.0", mat_text)
+
+        # --- Costs ---
         cost_frame = ttk.Labelframe(dialog, text="Kostenaufstellung")
         cost_frame.pack(fill="x", padx=20, pady=10)
         
@@ -1211,9 +1630,9 @@ class CarManagerApp:
         parts_entry.grid(row=1, column=1, padx=5, pady=5)
         parts_entry.insert(0, "0.00")
         
-        # Material List
-        ttk.Label(dialog, text="Verwendetes Material / Teile:").pack(pady=5)
-        mat_entry = tk.Text(dialog, height=4)
+        # Material Text (Manual override or auto)
+        ttk.Label(dialog, text="Material (Text):").pack(pady=5)
+        mat_entry = tk.Text(dialog, height=2)
         mat_entry.pack(fill="x", padx=20)
         
         ttk.Label(dialog, text="Datum:").pack(pady=5)
@@ -1234,13 +1653,19 @@ class CarManagerApp:
         def save():
             try:
                 labor = float(labor_entry.get())
-                parts = float(parts_entry.get())
-                total = labor + parts
+                parts_cost = float(parts_entry.get())
+                total = labor + parts_cost
                 desc = desc_entry.get("1.0", "end-1c")
                 mat = mat_entry.get("1.0", "end-1c")
                 date = date_entry.get()
                 
-                record = ServiceRecord(v_id, date, desc, total, labor_cost=labor, parts_cost=parts, materials=mat)
+                # Deduct stock
+                for item in used_parts:
+                    p = item['part']
+                    p.quantity -= item['qty']
+                    database.update_part(p)
+                
+                record = ServiceRecord(v_id, date, desc, total, labor_cost=labor, parts_cost=parts_cost, materials=mat)
                 rec_id = database.add_service_record(record)
                 
                 # Handle attachment
@@ -1264,10 +1689,11 @@ class CarManagerApp:
                 
                 dialog.destroy()
                 self.refresh_all()
+                messagebox.showinfo("Erfolg", "Service gespeichert und Lagerbestand aktualisiert.")
             except ValueError:
                 messagebox.showerror("Fehler", "Ungültige Kosten.")
                 
-        ttk.Button(dialog, text="Speichern", command=save).pack(pady=20)
+        ttk.Button(dialog, text="Speichern", command=save, style="primary.TButton").pack(pady=20)
 
     def show_service_history(self, v_id=None):
         if v_id is None:
@@ -1451,7 +1877,7 @@ class CarManagerApp:
         if not selected: return
         p_id = self.parts_tree.item(selected[0])['values'][0]
         # Find part object
-        parts = database.get_parts()
+        parts = database.get_all_parts()
         part = next((p for p in parts if p.id == p_id), None)
         if part:
             self.open_part_dialog(part)
@@ -2152,6 +2578,23 @@ class CarManagerApp:
 
         lf_email.columnconfigure(1, weight=1)
 
+        # --- CONTRACT TEMPLATE ---
+        lf_contract = ttk.Labelframe(container, text="Kaufvertrag - Rechtstexte & Bedingungen", padding=15)
+        lf_contract.pack(fill="x", pady=10)
+        
+        ttk.Label(lf_contract, text="Hier können Sie die Vertragsbedingungen (Gewährleistungsausschluss etc.) bearbeiten:").pack(anchor="w", pady=(0, 5))
+        
+        self.txt_contract_conditions = ScrolledText(lf_contract, height=8, font=("Consolas", 9))
+        self.txt_contract_conditions.pack(fill="x", pady=5)
+        
+        # Load existing conditions
+        try:
+            if os.path.exists("contract_conditions.txt"):
+                with open("contract_conditions.txt", "r", encoding="utf-8") as f:
+                    self.txt_contract_conditions.insert("1.0", f.read())
+        except Exception as e:
+            self.txt_contract_conditions.insert("1.0", f"Fehler beim Laden: {e}")
+
         # --- UPDATE SETTINGS ---
         lf_update = ttk.Labelframe(container, text="Software Update (GitHub)", padding=15)
         lf_update.pack(fill="x", pady=10)
@@ -2199,6 +2642,13 @@ class CarManagerApp:
         lf_update.columnconfigure(1, weight=1)
 
         def save_settings():
+            # Save contract conditions
+            try:
+                with open("contract_conditions.txt", "w", encoding="utf-8") as f:
+                    f.write(self.txt_contract_conditions.get("1.0", "end-1c"))
+            except Exception as e:
+                messagebox.showerror("Fehler", f"Fehler beim Speichern der Vertragsbedingungen: {e}")
+
             database.set_setting("admin_password", self.ent_admin_pwd.get())
             database.set_setting("company_name", self.ent_company_name.get())
             database.set_setting("company_address", self.ent_company_address.get())
@@ -2327,8 +2777,14 @@ if __name__ == "__main__":
     # Init DB
     database.init_db()
     
+    # Load Theme
+    try:
+        theme = database.get_setting("theme", "superhero")
+    except:
+        theme = "superhero"
+    
     # Use ttkbootstrap Window
-    root = ttk.Window(themename="superhero")
+    root = ttk.Window(themename=theme)
     
     # Resize for main app
     root.geometry("1200x800")
